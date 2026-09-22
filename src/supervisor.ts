@@ -45,6 +45,7 @@ import {
 import { PROVIDER_ID, createSessionClient } from "./provider.ts";
 import { endpointLabel, isLocalEndpoint } from "./endpoint.ts";
 import { autostartEnabled, launchCommand } from "./settings.ts";
+import { ctxLive, hasUI } from "./session.ts";
 import { state, type GpuUsage } from "./state.ts";
 import { paint } from "./ui/footer.ts";
 
@@ -128,7 +129,11 @@ export async function refreshCatalogue(
 
 /** One line, wherever this run can show it. */
 export function report(ctx: ExtensionContext, text: string, level: "info" | "warning" | "error"): void {
-  if (ctx.hasUI) {
+  // Background work can still be holding the ctx of a session that has since
+  // been replaced. Dropping the line is the whole answer: there is no window
+  // left to notify, and stderr in a live TUI would print through the render.
+  if (!ctxLive(ctx)) return;
+  if (hasUI(ctx)) {
     ctx.ui.notify(text, level);
   } else {
     // print/json modes: stderr keeps stdout clean for pipelines.

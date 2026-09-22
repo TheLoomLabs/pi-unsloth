@@ -25,6 +25,7 @@ import {
 } from "../src/supervisor.ts";
 import { autoUnloadOnExit, footerEnabled } from "../src/settings.ts";
 import { rememberPolicy } from "../src/hardware/profile.ts";
+import { beginSession, endSession } from "../src/session.ts";
 import { resetState, state } from "../src/state.ts";
 import { footerTarget, paint, setFooterVisible, startFooter, stopFooter } from "../src/ui/footer.ts";
 import { openPanel } from "../src/ui/panel.ts";
@@ -108,22 +109,36 @@ export default function (pi: ExtensionAPI): void {
     // Read once, here: `state` is the session's answer from now on, so the
     // toggle takes effect on the keystroke rather than on the next read.
     state.footerVisible = footerEnabled();
+    // Opens the window this session's background work runs inside.
+    // `session_shutdown` closes it, and the chain below stops at its next
+    // await rather than carrying on against a ctx Pi has already retired.
+    const alive = beginSession();
     startFooter(ctx);
     // Not awaited: startup can take a minute and the editor must stay usable
     // throughout. The footer is the progress report.
     void (async () => {
-      await ensureServer(ctx);
-      await refreshCatalogue(ctx);
+      await ensureServer(ctx, { signal: alive });
+      if (alive.aborted) return;
+      await refreshCatalogue(ctx, { signal: alive });
+      if (alive.aborted) return;
       // The session may already have a model — chosen with `--model`, or
       // restored with the session — and `model_select` does not always fire
       // for those. It is ours to keep ready exactly as a switch would be.
       const model = ctx.model;
       if (model && isOurModel(model)) startEnsure(ctx, model);
       else paint(ctx);
+      if (alive.aborted) return;
       // Last, and after the ensure is already running in the background: the
       // wizard owns the input while it is open, so nothing may wait behind it.
       await offerSetup(ctx);
-    })();
+    })().catch((error: unknown) => {
+      // The backstop, not the fix: every step above already handles its own
+      // failures, and the abort checks are what keep this chain off a retired
+      // ctx. What is left is the race no check can close — the session ending
+      // between one line and the next — and an unhandled rejection here would
+      // take the whole editor down with it.
+      report(ctx, `Unsloth startup stopped: ${error instanceof Error ? error.message : String(error)}`, "warning");
+    });
   });
 
   // Every model switch, from every source: auto-switch would silently drop
@@ -165,6 +180,10 @@ export default function (pi: ExtensionAPI): void {
 
   // Idempotent, and the only place timers are cleared.
   pi.on("session_shutdown", async (event, ctx) => {
+    // First, and before the await below: this is what stops the startup chain
+    // and anything else holding this session's signal, so nothing new is
+    // started against a ctx that is about to be retired.
+    endSession();
     // Only a real exit frees the GPUs: `/new` and `/reload` also land here, and
     // unloading on those would cost a reload the user never asked for.
     if (event.reason === "quit" && autoUnloadOnExit()) {

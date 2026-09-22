@@ -9,6 +9,7 @@
  */
 
 import { getSystemGpu, computeDevices } from "../api/system.ts";
+import { hasUI } from "../session.ts";
 import { createSessionClient, formatContext } from "../provider.ts";
 import { state, type GpuUsage, type SessionState } from "../state.ts";
 import { meterBar, terminalColumns } from "./draw.ts";
@@ -231,7 +232,10 @@ export function paint(ctx: FooterContext): void {
       // A view that cannot draw must not stop the status line from updating.
     }
   }
-  if (!ctx.hasUI) return;
+  // Safe read, not `ctx.hasUI`: paint is reached from the 4 s tick and from
+  // background work that outlives its session, and on a stale ctx the raw
+  // property throws where a skipped repaint is the right answer.
+  if (!hasUI(ctx)) return;
   // Hidden means the line is *cleared*, not merely left stale — and the
   // painters above still ran, because an overlay the user has open is a
   // different question from whether the status line is drawn.
@@ -297,7 +301,7 @@ export async function pollVram(ctx: FooterContext): Promise<void> {
  * is still repainted each tick so the `▸` marker appears and clears promptly.
  */
 export function startFooter(ctx: FooterContext): void {
-  if (!ctx.hasUI) return;
+  if (!hasUI(ctx)) return;
   ensureTick(ctx);
   paint(ctx);
 }
@@ -309,7 +313,7 @@ function wanted(): boolean {
 
 /** Start the tick if something wants it and there is not one already. */
 function ensureTick(ctx: FooterContext): void {
-  if (!ctx.hasUI || tick || !wanted()) return;
+  if (!hasUI(ctx) || tick || !wanted()) return;
   tick = setInterval(() => {
     if (state.streaming || polling) {
       paint(ctx);
@@ -345,7 +349,9 @@ export function stopFooter(ctx: FooterContext): void {
   }
   polling = false;
   painters.clear();
-  if (ctx.hasUI) ctx.ui.setStatus(STATUS_KEY, undefined);
+  // A shutdown that arrives after the session is already gone still has to
+  // clear the timers above; it simply has no line left to clear.
+  if (hasUI(ctx)) ctx.ui.setStatus(STATUS_KEY, undefined);
 }
 
 /** Test seam: is a tick currently registered? */
