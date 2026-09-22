@@ -271,6 +271,50 @@ describe("the lines it draws", () => {
   });
 });
 
+describe("the logo", () => {
+  /** The rows the overlay may use: `overlayGeometry`'s 80 %, less its edges. */
+  function budget(rows: number): number {
+    return Math.floor(rows * 0.8) - 2;
+  }
+
+  it("heads the wizard on a terminal with room for it", () => {
+    const lines = wizardLines(state(), 70, theme, 44);
+    assert.match(lines.join("\n"), /\(o {2}o\)/);
+    assert.equal(lines[0]?.trim().startsWith("─"), true, lines[0]);
+  });
+
+  it("gives way to the screen itself before the screen is clipped", () => {
+    // 24 rows: two GPU blocks, both warnings' worth of room and the keys all
+    // have to fit, and they are what the user came for.
+    const short = wizardLines(state(), 70, theme, 24);
+    assert.doesNotMatch(short.join("\n"), /\(o {2}o\)/);
+    assert.match(short.join("\n"), /⏎ save/);
+  });
+
+  it("never costs the wizard a line it needed", () => {
+    for (let rows = 16; rows <= 60; rows += 1) {
+      const body = wizardLines(state(), 70, theme, 0).length;
+      const drawn = wizardLines(state(), 70, theme, rows).length;
+      // Either the logo fitted in the slack, or it was not drawn at all.
+      assert.ok(drawn === body || drawn <= budget(rows), `${rows} rows: ${drawn} lines, budget ${budget(rows)}`);
+    }
+  });
+
+  it("keeps every line inside the width, logo and all", () => {
+    for (const width of [50, 54, 70, 120]) {
+      for (const line of wizardLines(state(), width, theme, 44)) {
+        const shown = visibleWidth(line);
+        assert.ok(shown <= width, `${shown} > ${width}: ${line}`);
+      }
+    }
+  });
+
+  it("is there on the degraded screen too, which has nothing else on it", () => {
+    const degraded = state({ gpus: [], degradedReason: "the server did not answer /api/system" });
+    assert.match(wizardLines(degraded, 70, theme, 44).join("\n"), /\(o {2}o\)/);
+  });
+});
+
 describe("wizardSummary", () => {
   it("is one honest line for a terminal that cannot draw the panel", () => {
     assert.equal(wizardSummary(state()), "⬢ unsloth — 2 compute GPUs · display: GPU 0");

@@ -39,7 +39,18 @@ import {
 import type { SizingSupport } from "../hardware/version.ts";
 import { createSessionClient } from "../provider.ts";
 import { report } from "../supervisor.ts";
-import { Framed, Lines, MIN_OVERLAY_COLUMNS, overlayGeometry, padTo, terminalColumns } from "./draw.ts";
+import {
+  FRAME_ROWS,
+  Framed,
+  Lines,
+  MAX_OVERLAY_HEIGHT_SHARE,
+  MIN_OVERLAY_COLUMNS,
+  overlayGeometry,
+  padTo,
+  terminalColumns,
+  terminalRows,
+} from "./draw.ts";
+import { logoLines } from "./logo.ts";
 
 /** One open of the wizard is three local requests; none may hang the overlay. */
 const WIZARD_TIMEOUT_MS = 5_000;
@@ -500,8 +511,32 @@ const KEYS_SHORT = "↑↓  ←→  d  e  ⏎ save  esc";
 /** While the field is open there are only three keys, and two of them differ. */
 const KEYS_EDITING = "type an address  ⏎ test and use  esc cancel";
 
-/** Everything the overlay draws, in order. */
-export function wizardLines(state: WizardState, width: number, theme: WizardTheme): string[] {
+/**
+ * Everything the overlay draws, in order.
+ *
+ * `rows` is how tall the terminal is, and it is a parameter rather than a
+ * lookup so that every height this screen can be drawn at is a unit test. It
+ * buys one thing: the mascot (`logo.ts`) is laid on top only once the rest of
+ * the screen has been measured and found to leave room for it. The wizard is
+ * the tallest overlay in the extension — a server line, a GPU block each, two
+ * conditional warnings and the keys — and on a short terminal those are all
+ * load-bearing, so the decoration is what gives way.
+ */
+export function wizardLines(
+  state: WizardState,
+  width: number,
+  theme: WizardTheme,
+  rows: number = terminalRows(),
+): string[] {
+  const body = wizardBody(state, width, theme);
+  // What the overlay may occupy (`overlayGeometry`), less its own two edges.
+  const available = Math.floor(rows * MAX_OVERLAY_HEIGHT_SHARE) - FRAME_ROWS;
+  const logo = logoLines(width, available - body.length - 1, theme);
+  const lines = logo.length === 0 ? body : [...logo, "", ...body];
+  return lines.map((line) => truncateToWidth(line, width, ""));
+}
+
+function wizardBody(state: WizardState, width: number, theme: WizardTheme): string[] {
   const pad = " ".repeat(MARGIN);
   const lines: string[] = [serverLine(state, theme), ...endpointLines(state, width, theme), ""];
 
@@ -510,7 +545,7 @@ export function wizardLines(state: WizardState, width: number, theme: WizardThem
     // the address being replaced, and drawing them under a half-typed hostname
     // invites `⏎` to be read as "save those".
     lines.push(`${pad}${theme.fg("dim", KEYS_EDITING)}`);
-    return lines.map((line) => truncateToWidth(line, width, ""));
+    return lines;
   }
 
   if (state.degradedReason !== undefined) {
@@ -522,7 +557,7 @@ export function wizardLines(state: WizardState, width: number, theme: WizardThem
       // topology, and it is the only key that can fix it from this screen.
       `${pad}${theme.fg("dim", "e server   esc close")}`,
     );
-    return lines.map((line) => truncateToWidth(line, width, ""));
+    return lines;
   }
 
   lines.push(countLine(state, theme), "");
@@ -540,7 +575,7 @@ export function wizardLines(state: WizardState, width: number, theme: WizardThem
   lines.push(...block("Wrong?  d  toggles the display flag on the selected GPU", "dim", MARGIN, width, theme), "");
   const keys = visibleWidth(KEYS_FULL) + 2 * MARGIN <= width ? KEYS_FULL : KEYS_SHORT;
   lines.push(`${pad}${theme.fg("dim", keys)}`);
-  return lines.map((line) => truncateToWidth(line, width, ""));
+  return lines;
 }
 
 /** One line for a terminal too narrow to draw in, and for `pi -p`. */

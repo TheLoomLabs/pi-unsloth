@@ -115,6 +115,13 @@ The bars are the machine's own figures - they agree with`/sys/class/drm/*/device
 
 ```
 ╭─ Unsloth setup ────────────────────────────────────────────────────────╮
+│   ───────────────────────────────────────────────                      │
+│     /\        /\                                                       │
+│    (  )      (  )     █ █ █▄█ █▀▀ █   █▀█ ▀█▀ █ █                      │
+│     \  \____/  /      █ █ █ █ ▀▀█ █   █ █  █  █▀█                      │
+│      \ (o  o) /       ▀▀▀ ▀ ▀ ▀▀▀ ▀▀▀ ▀▀▀  ▀  ▀ ▀                      │
+│        \ ~~ /                                                          │
+│                                                                        │
 │   Server    127.0.0.1:8888  ✓ up  v2026.9.7  rocm        e change      │
 │                                                                        │
 │   Detected 2 compute GPUs  (1 integrated, ignored)                     │
