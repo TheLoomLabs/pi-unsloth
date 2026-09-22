@@ -1,0 +1,10 @@
+node_modules/
+*.tgz
+.DS_Store
+
+# Working notes, not part of the package: the design docs, the agent brief and
+# the task ledger stay on the author's machine. Nothing in src/, skills/ or the
+# shipped markdown may reference them — an installed user does not have them.
+docs/
+AGENTS.md
+CLAUDE.md

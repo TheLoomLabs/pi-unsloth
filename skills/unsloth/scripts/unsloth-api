@@ -1,0 +1,108 @@
+#!/bin/sh
+#
+# unsloth-api — one authenticated request to the Unsloth Studio server.
+#
+#   unsloth-api GET  /api/system
+#   unsloth-api POST /api/inference/estimate-memory '{"model_path":"/…"}'
+#   unsloth-api PUT  /api/settings/openai-auto-switch/overrides @payload.json
+#
+# The endpoint and the key are resolved exactly as the extension resolves them
+# — environment, then ~/.pi/agent/unsloth.json, then the default — so this
+# script and the panel always talk to the same server.
+#
+# The key never reaches argv, stdout or an error message: it is written to a
+# private curl config file that is deleted on exit. Do not add an echo of it.
+#
+# The response body goes to stdout and the HTTP status to stderr, because for
+# this API the status is half the answer: /api/inference/validate says no with
+# `200 {"valid": false}`, refuses a configuration with `400 {"detail": "…"}`
+# and rejects *our own payload shape* with `422 {"detail": [ … ]}`, and those
+# three mean three different things. Exit status is 0 for 2xx, 1 otherwise —
+# the body still prints, because on 4xx the body is the message.
+#
+# Environment: UNSLOTH_BASE_URL, UNSLOTH_API_KEY, PI_CODING_AGENT_DIR,
+#              UNSLOTH_TIMEOUT (seconds, default 30).
+set -eu
+
+if [ "$#" -lt 2 ]; then
+  echo "usage: unsloth-api <METHOD> <PATH> [JSON | @FILE]" >&2
+  exit 2
+fi
+
+method=$1
+path=$2
+body=${3:-}
+
+command -v curl >/dev/null 2>&1 || { echo "unsloth-api: curl is not installed" >&2; exit 2; }
+command -v node >/dev/null 2>&1 || { echo "unsloth-api: node is not installed" >&2; exit 2; }
+
+case $path in
+  /*) ;;
+  *) path="/$path" ;;
+esac
+
+work=$(mktemp -d) || exit 2
+trap 'rm -rf "$work"' EXIT INT TERM
+config="$work/curl.conf"
+out="$work/body"
+
+# Endpoint and credential resolution, in the extension's own order. Emits a
+# curl config — never a shell assignment — so the key is not exposed to `ps`
+# and cannot end up in a transcript.
+UNSLOTH_REQUEST_PATH=$path node -e '
+  const fs = require("node:fs");
+  const os = require("node:os");
+  const path = require("node:path");
+
+  const agentDir = process.env.PI_CODING_AGENT_DIR || path.join(os.homedir(), ".pi", "agent");
+  const readJson = (file) => {
+    try {
+      return JSON.parse(fs.readFileSync(file, "utf8"));
+    } catch {
+      return undefined;
+    }
+  };
+
+  const profile = readJson(path.join(agentDir, "unsloth.json"));
+  const raw = (process.env.UNSLOTH_BASE_URL || profile?.baseUrl || "http://127.0.0.1:8888").trim();
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw) ? raw : `http://${raw}`;
+  let url;
+  try {
+    url = new URL(withScheme);
+  } catch {
+    console.error(`unsloth-api: ${raw} is not an address`);
+    process.exit(2);
+  }
+  if (!url.port && url.protocol === "http:") url.port = "8888";
+
+  const key = (process.env.UNSLOTH_API_KEY || readJson(path.join(agentDir, "auth.json"))?.unsloth?.key || "").trim();
+
+  const quote = (value) => `"${value.replace(/\\/g, "\\\\").replace(/"/g, "\\\"")}"`;
+  const lines = [`url = ${quote(new URL(process.env.UNSLOTH_REQUEST_PATH, url).toString())}`];
+  if (key) lines.push(`header = ${quote(`Authorization: Bearer ${key}`)}`);
+  else console.error("unsloth-api: no API key found — /api/health and /v1/models still answer; everything else will 401");
+  process.stdout.write(lines.join("\n") + "\n");
+' >"$config" || exit 2
+chmod 600 "$config"
+
+set -- --config "$config" --silent --show-error --max-time "${UNSLOTH_TIMEOUT:-30}" \
+       --request "$method" --output "$out" --write-out '%{http_code}'
+
+if [ -n "$body" ]; then
+  case $body in
+    @*) data="$body" ;;
+    *) printf '%s' "$body" >"$work/payload"; data="@$work/payload" ;;
+  esac
+  set -- "$@" --header "Content-Type: application/json" --data-binary "$data"
+fi
+
+status=$(curl "$@") || { echo "unsloth-api: $method $path — no answer from the server" >&2; exit 1; }
+
+cat "$out"
+[ -s "$out" ] && [ "$(tail -c1 "$out" | wc -l)" -eq 0 ] && echo
+echo "HTTP $status  $method $path" >&2
+
+case $status in
+  2*) exit 0 ;;
+  *) exit 1 ;;
+esac
