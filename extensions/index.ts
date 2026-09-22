@@ -31,7 +31,7 @@ import { footerTarget, paint, setFooterVisible, startFooter, stopFooter } from "
 import { openPanel } from "../src/ui/panel.ts";
 import { samplingByName } from "../src/ui/sampling.ts";
 import { sizeByName } from "../src/ui/sizer.ts";
-import { offerSetup, runWizard } from "../src/ui/wizard.ts";
+import { runWizard, suggestSetup } from "../src/ui/wizard.ts";
 import { waitForModel } from "../src/ui/waiting.ts";
 
 export default function (pi: ExtensionAPI): void {
@@ -39,7 +39,7 @@ export default function (pi: ExtensionAPI): void {
 
   pi.registerCommand("unsloth", {
     description:
-      "Unsloth Studio panel; `add <model>` sizes a model, `sampling <model>` sets its sampling defaults, `setup` re-runs the wizard, `footer` shows or hides the status line, `off` frees the GPUs, `status` prints one line",
+      "Unsloth Studio panel; `add <model>` sizes a model, `sampling <model>` sets its sampling defaults, `setup` runs the hardware wizard, `footer` shows or hides the status line, `off` frees the GPUs, `status` prints one line",
     handler: async (args: string, ctx: ExtensionCommandContext) => {
       const trimmed = args.trim();
       // `add` and `footer` are the subcommands that take an argument, so they
@@ -117,8 +117,14 @@ export default function (pi: ExtensionAPI): void {
     // Not awaited: startup can take a minute and the editor must stay usable
     // throughout. The footer is the progress report.
     void (async () => {
-      await ensureServer(ctx, { signal: alive });
+      const up = await ensureServer(ctx, { signal: alive });
       if (alive.aborted) return;
+      // A machine that has never been through setup gets one line naming the
+      // command — never the wizard itself, which opens only from
+      // `/unsloth setup`. Only once the server is up: with nothing answering,
+      // "not set up" is the wrong half of the story and the footer is already
+      // telling the right one.
+      if (up) suggestSetup(ctx);
       await refreshCatalogue(ctx, { signal: alive });
       if (alive.aborted) return;
       // The session may already have a model — chosen with `--model`, or
@@ -127,10 +133,6 @@ export default function (pi: ExtensionAPI): void {
       const model = ctx.model;
       if (model && isOurModel(model)) startEnsure(ctx, model);
       else paint(ctx);
-      if (alive.aborted) return;
-      // Last, and after the ensure is already running in the background: the
-      // wizard owns the input while it is open, so nothing may wait behind it.
-      await offerSetup(ctx);
     })().catch((error: unknown) => {
       // The backstop, not the fix: every step above already handles its own
       // failures, and the abort checks are what keep this chain off a retired

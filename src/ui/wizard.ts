@@ -1,5 +1,5 @@
 /**
- * The setup wizard — `/unsloth setup`, and once on a machine with no profile.
+ * The setup wizard — `/unsloth setup`, and nothing else opens it.
  *
  * It exists for one reason: the extension has to decide which GPU drives the
  * monitor, and that decision is a measurement, not a certainty. So the wizard
@@ -733,24 +733,26 @@ export async function runWizard(ctx: ExtensionContext): Promise<void> {
 }
 
 /**
- * The first run on a machine with no profile.
+ * The first-run hint, on a machine that has never been through setup.
  *
- * Deliberately silent in every case where there is nothing to confirm: another
- * mode, a terminal too narrow for a modal, a profile that already exists, a
- * server that is not up, or a machine with no GPUs. A modal that appears on
- * every session until the server comes up would be nagging rather than setting
- * up, and the wizard is always one `/unsloth setup` away.
+ * The wizard used to open itself from here, on the first session on a machine
+ * with no profile. It no longer does: an overlay that takes the screen and the
+ * keyboard the moment `pi` starts is a popup, and setting up hardware is
+ * something the user asks for when they are ready to answer for it. What is
+ * left is one line — the extension is running unconfigured, and this is the
+ * command that fixes it.
+ *
+ * Silent where a line would be noise rather than a prompt: another mode, where
+ * `/unsloth status` is the interface, and a machine that already has GPU data
+ * on disk. It costs one file read, so it is cheap enough to say on every
+ * session until setup has actually happened.
  */
-export async function offerSetup(ctx: ExtensionContext): Promise<void> {
-  if (ctx.mode !== "tui" || terminalColumns() < MIN_OVERLAY_COLUMNS) return;
+export function suggestSetup(ctx: ExtensionContext): void {
+  if (ctx.mode !== "tui") return;
   // Not "is there a file": the footer toggle writes one policy key, and a
   // profile holding only a preference is not a machine that has been set up
   // (src/hardware/profile.ts → `setupHasRun`).
   if (setupHasRun()) return;
 
-  const state = await collect(ctx);
-  if (!state.server.up || state.gpus.length === 0) return;
-
-  const result = await showWizard(ctx, state);
-  if (result.outcome === "save") save(ctx, result.state);
+  report(ctx, "◌ Unsloth is not set up on this machine — run /unsloth setup", "info");
 }

@@ -260,7 +260,7 @@ describe("rememberPolicy", () => {
 describe("setupHasRun", () => {
   it("is false for a profile that holds only a preference", () => {
     // Otherwise switching the footer off on a fresh machine would silently
-    // suppress the first-run wizard for ever.
+    // suppress the first-run hint for ever.
     rememberPolicy("footer", false);
     assert.equal(profileExists(), true);
     assert.equal(setupHasRun(), false);

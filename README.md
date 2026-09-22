@@ -50,9 +50,10 @@ one, so a wrong key is reported as a rejected key rather than as a dead server.
 
 1. `pi` — the extension starts Unsloth Studio if it is not already up, and the
  editor stays usable while it comes up.
-2. The first session on a new machine opens the setup wizard: it lists the GPUs
+2. `/unsloth setup` — once per machine, when you are ready: it lists the GPUs
  the server reports, says which one it thinks drives your monitor **and why**,
- and lets you overrule it. Nothing is written until you press `⏎`.
+ and lets you overrule it. Nothing is written until you press `⏎`. Until you
+ run it, the first session on a machine says so in one line and opens nothing.
 3. `/model` — pick any downloaded model. It loads with its tuned settings.
 4. `ctrl+alt+u` — the panel: live VRAM bars, load, unload, size.
 5. `ctrl+alt+o` — free the GPUs when you are done.
@@ -158,7 +159,7 @@ The bars are the machine's own figures - they agree with`/sys/class/drm/*/device
 | `/unsloth`                  | The panel                                                 |
 | `/unsloth add <model>`      | Size a model against this hardware                        |
 | `/unsloth sampling <model>` | Set a model's sampling defaults                           |
-| `/unsloth setup`            | Re-run the setup wizard                                   |
+| `/unsloth setup`            | Run the setup wizard — the only thing that opens it       |
 | `/unsloth footer [on|off]`  | Show or hide the status line, and remember it             |
 | `/unsloth off`              | Unload                                                    |
 | `/unsloth status`           | One line about the server — for scripts and non-TUI modes |
